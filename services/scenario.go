@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 	"my-cucumber-backend/models"
+	"strconv"
+	"strings"
 )
 
 // CreateScenario creates a scenario record.
@@ -27,7 +29,7 @@ func CreateScenario(scenario *models.Scenario, projectID, userID int) error {
 // GetScenariosByProjectID retrieves all scenarios for a given project and user.
 func GetScenariosByProjectID(projectID, userID int) ([]models.Scenario, error) {
 	rows, err := DB.Query(
-		"SELECT id, name, folder_id, tags FROM scenarios WHERE project_id = ? AND user_id = ?",
+		"SELECT id, name, folder_id, project_id, tags FROM scenarios WHERE project_id = ? AND user_id = ?",
 		projectID, userID,
 	)
 	if err != nil {
@@ -39,7 +41,7 @@ func GetScenariosByProjectID(projectID, userID int) ([]models.Scenario, error) {
 	for rows.Next() {
 		var scenario models.Scenario
 		var tagsJSON string
-		if err := rows.Scan(&scenario.ID, &scenario.Name, &scenario.FolderID, &tagsJSON); err != nil {
+		if err := rows.Scan(&scenario.ID, &scenario.Name, &scenario.FolderID, &scenario.ProjectID, &tagsJSON); err != nil {
 			return nil, fmt.Errorf("failed to scan scenario row: %v", err)
 		}
 
@@ -59,23 +61,30 @@ func GetScenariosByProjectID(projectID, userID int) ([]models.Scenario, error) {
 // GetScenariosByTags retrieves scenarios matching ALL provided tags for a given project and user.
 func GetScenariosByTags(projectID, userID int, tags []string) ([]models.Scenario, error) {
 	if len(tags) == 0 {
-		return []models.Scenario{}, nil // Return empty slice if no tags provided
+		return []models.Scenario{}, nil
 	}
 
-	// Build the query dynamically based on the number of tags.
+	// Build the query to match both key and value
 	query := `
-        SELECT DISTINCT s.id, s.name, s.folder_id, s.tags
+        SELECT DISTINCT s.id, s.name, s.folder_id, s.project_id, s.tags
         FROM scenarios s
         WHERE s.project_id = ? AND s.user_id = ?
     `
-	args := make([]interface{}, 0, len(tags)+2)
-	args = append(args, projectID, userID)
+	args := []interface{}{projectID, userID}
 
+	// For each tag in format "key:value", add a condition
 	for _, tag := range tags {
-		query += fmt.Sprintf(" AND s.tags LIKE ?")
-		args = append(args, "%"+tag+"%") // Add wildcards for partial matching
-
+		parts := strings.Split(tag, ":")
+		if len(parts) != 2 {
+			continue
+		}
+		// Add JSON path condition to match key and value pair
+		query += ` AND s.tags LIKE ?`
+		// Look for both key and value in the JSON
+		args = append(args, fmt.Sprintf(`%%"key":"%s","value":"%s"%%`, parts[0], parts[1]))
 	}
+
+	log.Printf("Query: %s, Args: %v", query, args) // Add logging for debugging
 
 	rows, err := DB.Query(query, args...)
 	if err != nil {
@@ -88,7 +97,7 @@ func GetScenariosByTags(projectID, userID int, tags []string) ([]models.Scenario
 		var scenario models.Scenario
 		var tagsJSON string
 
-		if err := rows.Scan(&scenario.ID, &scenario.Name, &scenario.FolderID, &tagsJSON); err != nil {
+		if err := rows.Scan(&scenario.ID, &scenario.Name, &scenario.FolderID, &scenario.ProjectID, &tagsJSON); err != nil {
 			return nil, fmt.Errorf("failed to scan scenario row: %v", err)
 		}
 
@@ -96,7 +105,11 @@ func GetScenariosByTags(projectID, userID int, tags []string) ([]models.Scenario
 			log.Printf("Error unmarshaling tags for scenario %s: %v", scenario.ID, err)
 			scenario.Tags = []models.Tag{}
 		}
-		scenarios = append(scenarios, scenario)
+
+		// Filter scenarios to ensure ALL provided tags match
+		if matchesAllTags(scenario.Tags, tags) {
+			scenarios = append(scenarios, scenario)
+		}
 	}
 	if err = rows.Err(); err != nil {
 		return nil, fmt.Errorf("error during rows iteration: %v", err)
@@ -105,10 +118,36 @@ func GetScenariosByTags(projectID, userID int, tags []string) ([]models.Scenario
 	return scenarios, nil
 }
 
+// matchesAllTags checks if a scenario's tags match all the provided tag filters
+func matchesAllTags(scenarioTags []models.Tag, tagFilters []string) bool {
+	for _, filter := range tagFilters {
+		found := false
+		// Split the filter into key and value
+		parts := strings.Split(filter, ":")
+		if len(parts) != 2 {
+			continue // Skip invalid filters
+		}
+		filterKey := parts[0]
+		filterValue := parts[1]
+
+		// Check if any tag matches both key and value
+		for _, tag := range scenarioTags {
+			if tag.Key == filterKey && tag.Value == filterValue {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false // If any filter doesn't match, return false
+		}
+	}
+	return true
+}
+
 // GetScenariosByFolderID retrieves scenarios within a specific folder.
 func GetScenariosByFolderID(projectID, userID, folderID int) ([]models.Scenario, error) {
 	rows, err := DB.Query(
-		"SELECT id, name, folder_id, tags FROM scenarios WHERE project_id = ? AND user_id = ? AND folder_id = ?",
+		"SELECT id, name, folder_id, project_id, tags FROM scenarios WHERE project_id = ? AND user_id = ? AND folder_id = ?",
 		projectID, userID, folderID,
 	)
 	if err != nil {
@@ -120,7 +159,7 @@ func GetScenariosByFolderID(projectID, userID, folderID int) ([]models.Scenario,
 	for rows.Next() {
 		var scenario models.Scenario
 		var tagsJSON string
-		if err := rows.Scan(&scenario.ID, &scenario.Name, &scenario.FolderID, &tagsJSON); err != nil {
+		if err := rows.Scan(&scenario.ID, &scenario.Name, &scenario.FolderID, &scenario.ProjectID, &tagsJSON); err != nil {
 			return nil, fmt.Errorf("failed to scan scenario row: %v", err)
 		}
 
@@ -140,8 +179,8 @@ func GetScenariosByFolderID(projectID, userID, folderID int) ([]models.Scenario,
 // GetScenariosByName retrieves scenarios containing a keyword in their name.
 func GetScenariosByName(projectID, userID int, keyword string) ([]models.Scenario, error) {
 	rows, err := DB.Query(
-		"SELECT id, name, folder_id, tags FROM scenarios WHERE project_id = ? AND user_id = ? AND name LIKE ?",
-		projectID, userID, "%"+keyword+"%", // Use % for wildcard matching
+		"SELECT id, name, folder_id, project_id, tags FROM scenarios WHERE project_id = ? AND user_id = ? AND name LIKE ?",
+		projectID, userID, "%"+keyword+"%",
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query scenarios by name: %v", err)
@@ -152,7 +191,7 @@ func GetScenariosByName(projectID, userID int, keyword string) ([]models.Scenari
 	for rows.Next() {
 		var scenario models.Scenario
 		var tagsJSON string
-		if err := rows.Scan(&scenario.ID, &scenario.Name, &scenario.FolderID, &tagsJSON); err != nil {
+		if err := rows.Scan(&scenario.ID, &scenario.Name, &scenario.FolderID, &scenario.ProjectID, &tagsJSON); err != nil {
 			return nil, fmt.Errorf("failed to scan scenario row: %v", err)
 		}
 
@@ -203,4 +242,38 @@ func RefreshScenarios(user *models.User, projectID int) ([]models.Scenario, erro
 		}
 	}
 	return scenarios, nil
+}
+
+// RefreshAllScenarios fetches and updates scenarios from all associated projects.
+func RefreshAllScenarios(user *models.User) ([]models.Scenario, error) {
+	// 1. Get all associated projects
+	projects, err := GetProjects(user)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get projects: %v", err)
+	}
+
+	// 2. Refresh scenarios for each project
+	var allScenarios []models.Scenario
+	for _, project := range projects {
+		projectID, err := strconv.Atoi(project.ID)
+		if err != nil {
+			log.Printf("Invalid project ID %s: %v", project.ID, err)
+			continue
+		}
+
+		scenarios, err := RefreshScenarios(user, projectID)
+		if err != nil {
+			// Log the error but continue with other projects
+			log.Printf("Failed to refresh scenarios for project %d: %v", projectID, err)
+			continue
+		}
+
+		allScenarios = append(allScenarios, scenarios...)
+	}
+
+	if len(allScenarios) == 0 && len(projects) > 0 {
+		return nil, fmt.Errorf("failed to refresh scenarios for any project")
+	}
+
+	return allScenarios, nil
 }

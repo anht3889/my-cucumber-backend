@@ -203,30 +203,31 @@ func GetScenarios(user *models.User, projectID int) ([]models.Scenario, error) {
 		return nil, fmt.Errorf("failed to unmarshal JSON: %v\nResponse body: %s", err, string(body)) // Include response body for debugging
 	}
 
-	// Create a map to look up tags by ID.  This is *much* more efficient
-	// than searching the "included" array repeatedly.
+	// Create a map to look up tags by ID
 	tagMap := make(map[string]models.Tag)
 	for _, includedItem := range scenariosResponse.Included {
 		if includedItem.Type == "tags" {
 			tag := models.Tag{
-				ID:   includedItem.ID,
-				Name: fmt.Sprintf("%s:%s", includedItem.Attributes.Key, includedItem.Attributes.Value), //Combine tag
+				ID:    includedItem.ID,
+				Key:   includedItem.Attributes.Key,
+				Value: includedItem.Attributes.Value,
 			}
 			tagMap[tag.ID] = tag
 		}
 	}
 
-	// Build the simplified scenario data.
+	// Build the simplified scenario data
 	scenarios := make([]models.Scenario, 0, len(scenariosResponse.Data))
 	for _, scenarioData := range scenariosResponse.Data {
 		scenario := models.Scenario{
-			ID:       scenarioData.ID,
-			Name:     scenarioData.Attributes.Name,
-			FolderID: scenarioData.Attributes.FolderID,
-			Tags:     make([]models.Tag, 0), // Initialize an empty slice for tags
+			ID:        scenarioData.ID,
+			Name:      scenarioData.Attributes.Name,
+			FolderID:  scenarioData.Attributes.FolderID,
+			ProjectID: projectID,
+			Tags:      make([]models.Tag, 0),
 		}
 
-		// Associate tags with the scenario using the tagMap.
+		// Associate tags with the scenario using the tagMap
 		for _, tagRelationship := range scenarioData.Relationships.Tags.Data {
 			if tag, ok := tagMap[tagRelationship.ID]; ok {
 				scenario.Tags = append(scenario.Tags, tag)

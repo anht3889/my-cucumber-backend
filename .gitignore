@@ -23,3 +23,9 @@ go.work.sum
 
 # env file
 .env
+
+# Database file
+users.db
+
+# Backend binary
+my-cucumber-backend

@@ -41,8 +41,9 @@ func GetScenariosHandler(w http.ResponseWriter, r *http.Request) {
 	// Call the appropriate service function based on the provided parameters
 	if tagsStr != "" {
 		tags := strings.Split(tagsStr, ",") // Split comma-separated tags
+		// Each tag should be in format "key:value"
 		scenarios, err = services.GetScenariosByTags(projectID, userID, tags)
-		if err != nil { // Use the outer-scope 'err'
+		if err != nil {
 			http.Error(w, "Failed to get scenarios by tags: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -87,19 +88,24 @@ func RefreshScenariosHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	projectIDStr := r.URL.Query().Get("project_id")
-	if projectIDStr == "" {
-		http.Error(w, "project_id is required", http.StatusBadRequest)
-		return
-	}
-	projectID, err := strconv.Atoi(projectIDStr)
-	if err != nil {
-		http.Error(w, "Invalid project ID", http.StatusBadRequest)
-		return
+	var scenarios []models.Scenario
+	var err error
+
+	if projectIDStr != "" {
+		// Refresh scenarios for a specific project
+		projectID, err := strconv.Atoi(projectIDStr)
+		if err != nil {
+			http.Error(w, "Invalid project ID", http.StatusBadRequest)
+			return
+		}
+		scenarios, err = services.RefreshScenarios(user, projectID)
+	} else {
+		// Refresh scenarios for all associated projects
+		scenarios, err = services.RefreshAllScenarios(user)
 	}
 
-	scenarios, err := services.RefreshScenarios(user, projectID) // Call service in services/scenario.go
 	if err != nil {
-		http.Error(w, "Failed to refresh scenarios", http.StatusInternalServerError)
+		http.Error(w, "Failed to refresh scenarios: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 

@@ -109,33 +109,38 @@ func GetFoldersHierarchy(projectID, userID int) ([]models.Folder, error) {
 		return nil, err
 	}
 
-	// Create a map to look up folders by ID.
+	// Create a map to look up folders by ID
 	folderMap := make(map[string]*models.Folder)
 	for i := range allFolders {
-		folderMap[allFolders[i].ID] = &allFolders[i] // Use pointers for efficient modification
+		folder := allFolders[i]
+		folderMap[folder.ID] = &folder
 	}
 
-	// Build the hierarchy.
+	// Build the hierarchy
 	var rootFolders []models.Folder
-	for i := range allFolders {
-		folder := &allFolders[i] // Work with pointers
+	for _, folder := range allFolders {
 		if folder.ParentID == nil {
-			// Root folder (no parent)
-			rootFolders = append(rootFolders, *folder) // Append a *copy*
-		} else {
-			// Find the parent and add this folder as a child.
-			if parent, ok := folderMap[*folder.ParentID]; ok {
-				parent.Children = append(parent.Children, *folder) //Append a *copy*
-			} else {
-				// Handle cases where the parent ID is invalid (optional).
-				log.Printf("Warning: Folder %s has invalid parent ID %s", folder.ID, *folder.ParentID)
-				// You could choose to treat it as a root folder, or skip it.
-				rootFolders = append(rootFolders, *folder) //Treat as a root folder
-			}
+			// This is a root folder
+			rootFolder := folder
+			rootFolder.Children = getChildFolders(folder.ID, folderMap)
+			rootFolders = append(rootFolders, rootFolder)
 		}
 	}
 
 	return rootFolders, nil
+}
+
+// Helper function to recursively get child folders
+func getChildFolders(parentID string, folderMap map[string]*models.Folder) []models.Folder {
+	var children []models.Folder
+	for _, folder := range folderMap {
+		if folder.ParentID != nil && *folder.ParentID == parentID {
+			child := *folder
+			child.Children = getChildFolders(folder.ID, folderMap)
+			children = append(children, child)
+		}
+	}
+	return children
 }
 
 // DeleteFoldersByProjectID deletes all folders associated with a project and user.

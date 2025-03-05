@@ -1,15 +1,17 @@
 package models
 
-// Tag represents a simplified tag with just ID and Name.
+// Tag represents a tag with ID, Key and Value.
 type Tag struct {
-	ID   string `json:"id"`
-	Name string `json:"name"` // Combined key and value for simplicity
+	ID    string `json:"id"`
+	Key   string `json:"key"`
+	Value string `json:"value"`
 }
 
-// Scenario represents a simplified scenario with ID, Name, FolderID, and Tags.
+// Scenario represents a simplified scenario with ID, Name, FolderID, ProjectID, and Tags.
 type Scenario struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	FolderID int    `json:"folder_id"`
-	Tags     []Tag  `json:"tags"`
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	FolderID  int    `json:"folder_id"`
+	ProjectID int    `json:"project_id"`
+	Tags      []Tag  `json:"tags"`
 }
