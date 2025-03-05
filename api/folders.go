@@ -1,76 +1,57 @@
 package api
 
 import (
-	"encoding/json"
-	"net/http"
+	"my-cucumber-backend/models"
+	"my-cucumber-backend/services"
 	"strconv"
 
-	"my-cucumber-backend/middleware"
-	"my-cucumber-backend/services"
+	"github.com/gin-gonic/gin"
 )
 
 // GetFoldersHierarchyHandler retrieves the folder hierarchy for a project.
-func GetFoldersHierarchyHandler(w http.ResponseWriter, r *http.Request) {
-	user, ok := middleware.GetUserFromContext(r.Context())
-	if !ok || user == nil {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+func GetFoldersHierarchyHandler(c *gin.Context) {
+	user, exists := c.Get("user")
+	if !exists {
+		c.JSON(401, gin.H{"error": "Unauthorized"})
 		return
 	}
 
-	projectIDStr := r.URL.Query().Get("project_id")
-	if projectIDStr == "" {
-		http.Error(w, "project_id is required", http.StatusBadRequest)
-		return
-	}
-	projectID, err := strconv.Atoi(projectIDStr)
+	projectID, err := strconv.Atoi(c.Query("project_id"))
 	if err != nil {
-		http.Error(w, "Invalid project ID", http.StatusBadRequest)
+		c.JSON(400, gin.H{"error": "Invalid project ID"})
 		return
 	}
-	userID := user.ID
 
-	folders, err := services.GetFoldersHierarchy(projectID, userID)
+	typedUser := user.(*models.User)
+	folders, err := services.GetFoldersHierarchy(projectID, typedUser.ID)
 	if err != nil {
-		http.Error(w, "Failed to get folder hierarchy: "+err.Error(), http.StatusInternalServerError)
+		c.JSON(500, gin.H{"error": err.Error()})
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"message": "Folder hierarchy retrieved successfully",
-		"folders": folders,
-	})
+	c.JSON(200, folders)
 }
 
 // RefreshFoldersHandler fetches the latest folders from Cucumber Studio and updates the database.
-func RefreshFoldersHandler(w http.ResponseWriter, r *http.Request) {
-	user, ok := middleware.GetUserFromContext(r.Context())
-	if !ok || user == nil {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+func RefreshFoldersHandler(c *gin.Context) {
+	user, exists := c.Get("user")
+	if !exists {
+		c.JSON(401, gin.H{"error": "Unauthorized"})
 		return
 	}
 
-	projectIDStr := r.URL.Query().Get("project_id")
-	if projectIDStr == "" {
-		http.Error(w, "project_id is required", http.StatusBadRequest)
-		return
-	}
-	projectID, err := strconv.Atoi(projectIDStr)
+	projectID, err := strconv.Atoi(c.Query("project_id"))
 	if err != nil {
-		http.Error(w, "Invalid project ID", http.StatusBadRequest)
+		c.JSON(400, gin.H{"error": "Invalid project ID"})
 		return
 	}
-	//userID, _ := strconv.Atoi(user.ID)
 
-	err = services.RefreshFolders(user, projectID) // Call service in services/folder.go
+	typedUser := user.(*models.User)
+	err = services.RefreshFolders(typedUser, projectID)
 	if err != nil {
-		http.Error(w, "Failed to refresh folders", http.StatusInternalServerError)
+		c.JSON(500, gin.H{"error": err.Error()})
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"message": "Folders refreshed successfully",
-	})
+	c.JSON(200, gin.H{"message": "Folders refreshed successfully"})
 }

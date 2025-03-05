@@ -2,13 +2,12 @@ package middleware
 
 import (
 	"context"
-	"fmt"
-	"net/http"
 	"strings"
 
 	"my-cucumber-backend/models"
 	"my-cucumber-backend/services"
 
+	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 )
 
@@ -24,57 +23,60 @@ func SetSecretKey(key string) {
 }
 
 // AuthMiddleware checks for a valid JWT.
-func AuthMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		authHeader := r.Header.Get("Authorization")
+func AuthMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
-			http.Error(w, "Authorization header required", http.StatusUnauthorized)
+			c.AbortWithStatusJSON(401, gin.H{"error": "Authorization header is required"})
 			return
 		}
 
-		bearerToken := strings.Split(authHeader, " ")
-		if len(bearerToken) != 2 || strings.ToLower(bearerToken[0]) != "bearer" {
-			http.Error(w, "Invalid Authorization header format", http.StatusUnauthorized)
-			return
-		}
-
-		tokenString := bearerToken[1]
-
+		tokenString := strings.Replace(authHeader, "Bearer ", "", 1)
 		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-				return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
-			}
-			return []byte(SecretKey), nil // Use the exported SecretKey variable
+			return []byte(SecretKey), nil
 		})
 
-		if err != nil {
-			fmt.Println(err)
-			http.Error(w, "Invalid token", http.StatusUnauthorized)
+		if err != nil || !token.Valid {
+			c.AbortWithStatusJSON(401, gin.H{"error": "Invalid token"})
 			return
 		}
 
-		if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
-			userID, ok := claims["user_id"].(float64)
-			if !ok {
-				http.Error(w, "Invalid user ID in token", http.StatusUnauthorized)
-				return
-			}
-
-			user, err := services.GetUserByID(int(userID))
-			if err != nil {
-				http.Error(w, "User not found", http.StatusUnauthorized)
-				return
-			}
-			ctx := context.WithValue(r.Context(), UserContextKey, user)
-			next.ServeHTTP(w, r.WithContext(ctx))
-		} else {
-			http.Error(w, "Invalid token", http.StatusUnauthorized)
+		claims, ok := token.Claims.(jwt.MapClaims)
+		if !ok {
+			c.AbortWithStatusJSON(401, gin.H{"error": "Invalid token claims"})
+			return
 		}
-	})
+
+		userID := int(claims["user_id"].(float64))
+		user, err := services.GetUserByID(userID)
+		if err != nil {
+			c.AbortWithStatusJSON(401, gin.H{"error": "User not found"})
+			return
+		}
+
+		c.Set("user", user)
+		c.Next()
+	}
 }
 
 // GetUserFromContext retrieves the user from the request context.
 func GetUserFromContext(ctx context.Context) (*models.User, bool) {
 	user, ok := ctx.Value(UserContextKey).(*models.User)
 	return user, ok
+}
+
+func CORSMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Writer.Header().Set("Access-Control-Allow-Origin", "http://localhost:3000")
+		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, accept, origin, Cache-Control, X-Requested-With")
+		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, DELETE")
+
+		if c.Request.Method == "OPTIONS" {
+			c.AbortWithStatus(204)
+			return
+		}
+
+		c.Next()
+	}
 }

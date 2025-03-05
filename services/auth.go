@@ -103,3 +103,15 @@ func UpdateUserProjects(user *models.User, projects []models.Project) error {
 	user.Projects = string(projectsJSON) // Update the user object
 	return nil
 }
+
+// UpdateCucumberCredentials updates a user's Cucumber Studio credentials
+func UpdateCucumberCredentials(userID int, clientID, accessToken string) error {
+	_, err := DB.Exec(
+		"UPDATE users SET cucumber_client_id = ?, cucumber_access_token = ? WHERE id = ?",
+		clientID, accessToken, userID,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to update cucumber credentials: %v", err)
+	}
+	return nil
+}

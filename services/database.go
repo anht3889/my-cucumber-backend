@@ -63,6 +63,42 @@ func InitializeDB(dbPath string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create folders table:%v", err)
 	}
+
+	// Create charts table
+	createChartsTableSQL := `
+        CREATE TABLE IF NOT EXISTS charts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            type TEXT NOT NULL,
+            config TEXT NOT NULL,
+            query TEXT NOT NULL,
+            user_id INTEGER NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        );
+    `
+	if _, err := DB.Exec(createChartsTableSQL); err != nil {
+		return fmt.Errorf("failed to create charts table: %v", err)
+	}
+
+	// Create data tables table
+	createDataTablesTableSQL := `
+        CREATE TABLE IF NOT EXISTS data_tables (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            columns TEXT NOT NULL,
+            query TEXT NOT NULL,
+            user_id INTEGER NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        );
+    `
+	if _, err := DB.Exec(createDataTablesTableSQL); err != nil {
+		return fmt.Errorf("failed to create data_tables table: %v", err)
+	}
+
 	return nil
 }
 
